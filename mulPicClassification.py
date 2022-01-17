@@ -1,132 +1,71 @@
-import os
-import random
-import cv2
+import tensorflow as tf
+from tensorflow import keras
+
+# Helper libraries
 import numpy as np
-from keras.preprocessing.image import ImageDataGenerator
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Activation, Flatten, Conv2D, MaxPooling2D
-# from keras.api.keras.layers import , 
+import matplotlib.pyplot as plt
+print("tf version", tf.__version__)
 
-IMAGE_SIZE = 182
-# 训练图片大小
-epochs = 50#原来是50
-# 遍历次数
-batch_size = 32
-# 批量大小
-nb_train_samples = 512*2
-# 训练样本总数
-nb_validation_samples = 128*2
-# 测试样本总数
-train_data_dir = './data/gender_classification/Training'
-validation_data_dir = './data/gender_classification/Validation'
-# 样本图片所在路径
-FILE_PATH = 'Gender_new.h5'
-# 模型存放路径
-class Dataset(object):
+#导入 Fashion MNIST 数据集-
+fashion_mnist = keras.datasets.fashion_mnist
 
-    def __init__(self):
-        self.train = None
-        self.valid = None
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
 
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
+               'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
 
-    def read(self, img_rows=IMAGE_SIZE, img_cols=IMAGE_SIZE):
-        train_datagen = ImageDataGenerator(
-            rescale=1. / 255,
-            horizontal_flip=True)
+# 归一化
+train_images = train_images / 255.0
+test_images = test_images / 255.0
+# 打印训练集前25个图片
+# plt.figure(figsize=(10,10))
+# for i in range(25):
+#     plt.subplot(5,5,i+1)
+#     plt.xticks([])
+#     plt.yticks([])
+#     # plt.grid(False)
+#     plt.imshow(train_images[i], cmap=plt.cm.binary)
+#     plt.xlabel(class_names[train_labels[i]])
+# plt.show()
 
-        test_datagen = ImageDataGenerator(rescale=1. / 255)
+# 构建模型
+model = keras.Sequential([
+    keras.layers.Flatten(input_shape=(28, 28)),
+    keras.layers.Dense(128, activation='relu'),
+    keras.layers.Dense(10)
+])
 
-        train_generator = train_datagen.flow_from_directory(
-            train_data_dir,
-            target_size=(img_rows, img_cols),
-            batch_size=batch_size,
-            class_mode='binary')
+# 编译模型
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
 
-        validation_generator = test_datagen.flow_from_directory(
-            validation_data_dir,
-            target_size=(img_rows, img_cols),
-            batch_size=batch_size,
-            class_mode='binary')
+# 训练模型
+model.fit(train_images, train_labels, epochs=1)
 
-        self.train = train_generator
-        self.valid = validation_generator
+# 测试集准确率评估
+test_loss, test_acc = model.evaluate(test_images,  test_labels, verbose=2)
+print('\nTest accuracy:', test_acc)
 
+# 结果转成概率集
+probability_model = tf.keras.Sequential([model, 
+                                         tf.keras.layers.Softmax()])
+predictions = probability_model.predict(test_images)
 
-class Model(object):
+# 查看第一个预测结果的输出
+print("predictions[0]", predictions[0])
+# 查看第一个预测结果的输出中最大的概率所属的标签
+print("np.argmax(predictions[0])", np.argmax(predictions[0]))
+#查看第一的真实结果
+print("real res ", test_labels[0])
+# 预测后画出好看的图片https://www.tensorflow.org/tutorials/keras/classification?hl=zh-cn
 
+#即便您只使用一个图像，您也需要将其添加到列表中：
+img = test_images[1]
+img = (np.expand_dims(img,0))
+print(img.shape)
 
-
-    def __init__(self):
-        self.model = Sequential()
-        self.model.add(Conv2D(32, (3, 3), input_shape=(IMAGE_SIZE,IMAGE_SIZE,3)))
-        self.model.add(Activation('relu'))
-        self.model.add(MaxPooling2D(pool_size=(2, 2)))
-
-        self.model.add(Conv2D(32, (3, 3)))
-        self.model.add(Activation('relu'))
-        self.model.add(MaxPooling2D(pool_size=(2, 2)))
-        
-        
-        self.model.add(Conv2D(64, (3, 3)))
-        self.model.add(Activation('relu'))
-        self.model.add(MaxPooling2D(pool_size=(2, 2)))
-
-        self.model.add(Flatten())
-        self.model.add(Dense(64))
-        self.model.add(Activation('relu'))
-        self.model.add(Dropout(0.3))
-        self.model.add(Dense(1))
-        self.model.add(Activation('sigmoid'))
-
-
-    def train(self, dataset, batch_size=batch_size, nb_epoch=epochs):
-
-        self.model.compile(loss='binary_crossentropy',
-                      optimizer='adam',
-                      metrics=['accuracy'])
-        self.model.fit_generator(dataset.train,
-                                 steps_per_epoch=nb_train_samples // batch_size,
-                                 epochs=epochs,
-                                 validation_data=dataset.valid,
-                                 validation_steps=nb_validation_samples//batch_size)
-
-
-    def save(self, file_path=FILE_PATH):
-        print('Model Saved.')
-        self.model.save_weights(file_path)
-
-    def load(self, file_path=FILE_PATH):
-        print('Model Loaded.')
-        self.model.load_weights(file_path)
-
-    def predict(self, image):
-        # 预测样本分类
-        img = image.resize((1, IMAGE_SIZE, IMAGE_SIZE, 3))
-        img = image.astype('float32')
-        img /= 255
-
-        #归一化
-        result = self.model.predict(img)
-        print(result)
-        # 概率
-        result = self.model.predict_classes(img)
-        print(result)
-        # 0/1
-
-        return result[0]
-
-    def evaluate(self, dataset):
-        # 测试样本准确率
-        score = self.model.evaluate_generator(dataset.valid,steps=2)
-        print("样本准确率%s: %.2f%%" % (self.model.metrics_names[1], score[1] * 100))
-
-if __name__ == '__main__':
-    dataset = Dataset()
-    dataset.read()
-
-
-    model = Model()
-    # model.load()
-    model.train(dataset)
-    model.evaluate(dataset)
-    # model.save()
+# 预测
+predictions_single = probability_model.predict(img)
+print(predictions_single)
+print("预测所属标签 ", np.argmax(predictions_single[0]))
